@@ -1,276 +1,163 @@
 # Import the Earth Engine Python Package
 import ee
-# import pandas as pd
-import numpy as np
 import geojson
-import time
 import os
+import argparse
+import logging
 
-list_states = ["MG"]
 
-for state in list_states:
+def str2bool(v):
+    """
+    Function to transform strings into booleans.
 
-    path = os.path.join("/home/users/matheusb/datasets/shapefiles_brazil_cities/data/", state)
+    v: string variable
+    """
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
-    # Para mudar de conta:
-    # earthengine authenticate
+
+'''
+python googleEarthEngine_all.py --satellite landsat7_toa --shape_path ..\data\\area1.geojson --start_date 2019-01-01 --end_date 2020-01-01
+
+gdal_rasterize -l area2_lines -burn 1.0 -ts 2792.0 1072.0 -a_nodata 0.0 -te -54.866797645978856 -9.470560761817564 -54.61611971034132 -9.374296922444158
+'''
+
+
+def main():
+    parser = argparse.ArgumentParser(description='googleEarthEngine_all')
+
+    parser.add_argument('--satellite', type=str, required=True,
+                        help='Flag to define the satellite [Options: landsat[7|8]_toa || landsat[7|8]_sr || sentinel2]')
+    parser.add_argument('--shape_path', type=str, required=True,
+                        help='Path to the shape that is used as reference for cropping the satellite image')
+    parser.add_argument('--start_date', type=str, required=True,
+                        help='First date to filter data')
+    parser.add_argument('--end_date', type=str, required=True,
+                        help='End date to filter data')
+    parser.add_argument('--only_panchromatic', type=str2bool, required=False, default=False,
+                        help='Download only Panchromatic band. Only works from landsat_toa.')
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO)
+    logging.info(args)
 
     # Initialize the Earth Engine object, using the authentication credentials.
     ee.Initialize()
 
-    # Use these bands for prediction.
-    bands = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B10', 'B11', 'B12']
+    if args.satellite == "sentinel2":
+        # selected bands
+        # B2, B3, B4, B8 (BGR, NIR) - > 10 meter resolution
+        bands = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B10', 'B11', 'B12']  # 12
 
-    # Use Sentinel 2 surface reflectance data.
-    sentinel = ee.ImageCollection("COPERNICUS/S2")
+        # Use Sentinel 2 surface reflectance data.
+        satellite = ee.ImageCollection("COPERNICUS/S2")
 
+        flag_clouds = 'CLOUDY_PIXEL_PERCENTAGE'
 
-    # Cloud masking function.
-    def maskL8sr(image):
-        cloudShadowBitMask = ee.Number(2).pow(3).int()
-        cloudsBitMask = ee.Number(2).pow(5).int()
-        qa = image.select('pixel_qa')
-        mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0).And(qa.bitwiseAnd(cloudsBitMask).eq(0))
-        return image.updateMask(mask).select(bands).divide(10000)
+        def maskS2clouds(image):
+            cloudShadowBitMask = ee.Number(2).pow(3).int()
+            cloudsBitMask = ee.Number(2).pow(5).int()
+            qa = image.select('QA60')
+            _mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0).And(qa.bitwiseAnd(cloudsBitMask).eq(0))
+            return image.updateMask(_mask).select(bands).divide(10000)
 
+        mask = maskS2clouds
+    elif "landsat" in args.satellite:
+        flag_clouds = 'CLOUD_COVER'
 
-    def maskS2clouds(image):
-        cloudShadowBitMask = ee.Number(2).pow(3).int()
-        cloudsBitMask = ee.Number(2).pow(5).int()
-        qa = image.select('QA60')
-        mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0).And(qa.bitwiseAnd(cloudsBitMask).eq(0))
-        return image.updateMask(mask).select(bands).divide(10000)
+        if args.satellite.split('_')[1] == 'toa':
+            # Cloud masking function.
+            def mask_func(data):
+                qa = data.select('BQA')
+                clouds_bitmask = (1 << 4)
+                _mask = qa.bitwiseAnd(clouds_bitmask).eq(0)
+                return data.updateMask(_mask).select(bands)
 
+            mask = mask_func
 
-    def utf8(names_cities):
-        for i in range(names_cities.shape[0]):
-            names_cities[i][0] = names_cities[i][0].replace("ô", "o")
-            names_cities[i][0] = names_cities[i][0].replace("õ", "o")
-            names_cities[i][0] = names_cities[i][0].replace("í", "i")
-            names_cities[i][0] = names_cities[i][0].replace("ó", "o")
-            names_cities[i][0] = names_cities[i][0].replace("ç", "c")
-            names_cities[i][0] = names_cities[i][0].replace("ú", "u")
-            names_cities[i][0] = names_cities[i][0].replace(" ", "_")
-            names_cities[i][0] = names_cities[i][0].replace("á", "a")
-            names_cities[i][0] = names_cities[i][0].replace("ã", "a")
-            names_cities[i][0] = names_cities[i][0].replace("â", "a")
-            names_cities[i][0] = names_cities[i][0].replace("Ó", "O")
-            names_cities[i][0] = names_cities[i][0].replace("ü", "u")
-            names_cities[i][0] = names_cities[i][0].replace("É", "E")
-            names_cities[i][0] = names_cities[i][0].replace("é", "e")
-            names_cities[i][0] = names_cities[i][0].replace("\'", "")
-            names_cities[i][0] = names_cities[i][0].replace("'", "")
-            names_cities[i][0] = names_cities[i][0].upper()
-            names_cities[i][0] = names_cities[i][0] + ".json"
+            if int(args.satellite[7]) == 7:
+                # Use these bands
+                if args.only_panchromatic is True:
+                    bands = ['B8']
+                else:
+                    bands = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6_VCID_1', 'B6_VCID_2', 'B7', 'B8']  # 9
 
-        return names_cities
+                # Use landsat7 Top of Top of Atmosphere data
+                satellite = ee.ImageCollection("LANDSAT/LE07/C01/T1_TOA")
+            elif int(args.satellite[7]) == 8:
+                # Use these bands for prediction.
+                bands = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11']  # 11
 
+                # Use landsat8 Top of Top of Atmosphere data
+                satellite = ee.ImageCollection("LANDSAT/LC08/C01/T1_TOA")
+            else:
+                raise NotImplementedError
+        elif args.satellite.split('_')[1] == 'sr':  # SURFACE REFLECTANCE
+            if int(args.satellite[7]) == 7:
+                # Use these bands for prediction.
+                bands = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7']  # 7
 
-    # The image input data is cloud-masked median composite.
-    image = sentinel.filterDate('2019-01-01', '2020-01-01').filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 30)).map(
-        maskS2clouds).median()  # .filterBounds(ee.Geometry.Polygon(geometry))
-    # image = sentinel.filterDate('2019-01-01','2020-01-01').filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 30)).select(bands).median().divide(10000)
+                # Use landsat7 Surface Reflectance data
+                satellite = ee.ImageCollection("LANDSAT/LE07/C01/T1_SR")
 
-    # names_cities_metropolitan = pd.read_csv("/home/datasets/shapefiles_brazil_cities/metropolitanAreaBHNames.tsv")
-    # names_cities_metropolitan = utf8(names_cities_metropolitan.values)
-    # names_cities_metropolitan = set(names_cities_metropolitan.flatten())
-    # # print(names_cities_metropolitan)
+                # Cloud masking function.
+                def mask_func(data):
+                    qa = data.select('pixel_qa')
+                    cloud = qa.bitwiseAnd(1 << 5).And(qa.bitwiseAnd(1 << 7)).Or(qa.bitwiseAnd(1 << 3))
+                    _mask = data.mask().reduce(ee.Reducer.min())
+                    return data.updateMask(cloud.Not()).updateMask(_mask).select(bands).divide(10000)
+                mask = mask_func
+            elif int(args.satellite[7]) == 8:
+                # Use these bands for prediction.
+                bands = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B10', 'B11']  # 9
 
-    names_cities = np.array(["IBIA.json"])  # np.sort(np.array(os.listdir(path)))
+                # Use landsat8 Surface Reflectance data
+                satellite = ee.ImageCollection("LANDSAT/LC08/C01/T1_SR")
 
-    print(len(names_cities))
-    # names_cities = set(names_cities.flatten())
+                # Cloud masking function.
+                def mask_func(data):
+                    qa = data.select('pixel_qa')
+                    cloud_shadow_bitmask = (1 << 3)
+                    clouds_bitmask = (1 << 5)
+                    _mask = qa.bitwiseAnd(cloud_shadow_bitmask).eq(0).And(qa.bitwiseAnd(clouds_bitmask).eq(0))
+                    return data.updateMask(_mask).select(bands).divide(10000)
+                mask = mask_func
+            else:
+                raise NotImplementedError
+        else:
+            raise NotImplementedError
+    else:
+        raise NotImplementedError
 
-    # diff = names_cities - names_cities_metropolitan
+    with open(os.path.join(args.shape_path), encoding='utf-8') as f:
+        gj = geojson.load(f)
+        for i, polygon in enumerate(gj['features'][0]["geometry"]["coordinates"]):
+            geometry = ee.Geometry.Polygon(polygon)
 
-    # diff = np.array(list(diff))
+            file_name = os.path.splitext(os.path.basename(args.shape_path))[0] + '_' + args.satellite
+            if args.only_panchromatic is True:
+                file_name = file_name + '_panchromatic'
+            logging.info(file_name)
 
-    # diff.sort()
+            _image = satellite.filterDate(args.start_date, args.end_date).\
+                filter(ee.Filter.lte(flag_clouds, 30)).map(mask).median()
+            task = ee.batch.Export.image.toDrive(image=_image.clip(geometry),
+                                                 description=file_name,
+                                                 folder='road_detection_dataset',
+                                                 region=polygon,
+                                                 scale=10,
+                                                 fileFormat='GeoTIFF',
+                                                 skipEmptyTiles=True,
+                                                 maxPixels=1e13)
+            task.start()
 
-    # diff_0 = diff[:18]
-    # diff_1 = diff[19:36]
-    # diff_2 = diff[37:54]
-    # diff_3 = diff[55:72]
-    # diff_4 = diff[73:90]
-    # diff_5 = diff[91:108]
-    # diff_6 = diff[109:126]
-    # diff_7 = diff[127:144]
-
-    exception_list = []
-    count = 1
-
-    for name in names_cities:
-
-        if count % 10 == 0:
-            print("waiting...")
-            time.sleep(10 * 60)
-        count += 1
-
-        with open(os.path.join(path, name), encoding='utf-8') as f:
-            gj = geojson.load(f)
-
-            pol_num = 0
-            for polygon in gj['features']["geometry"]["coordinates"]:
-                pol_num += 1
-
-                geometry = ee.Geometry.Polygon(polygon)
-                region = polygon
-
-                file_name = name[:-5].replace("'", "") + "_" + str(pol_num)
-
-                task = ee.batch.Export.image.toDrive(image=image.clip(geometry),
-                                                     description=file_name,
-                                                     folder=state,
-                                                     region=region,
-                                                     scale=10,
-                                                     fileFormat='GeoTIFF',
-                                                     skipEmptyTiles=True,
-                                                     maxPixels=1e13)
-
-                print(file_name)
-
-                try:
-                    # Send the task for the engine.
-                    task.start()
-                except:
-                    exception_list.append(task)
-                    print("size exception_list: ", len(exception_list))
-
-    print("writing tasks list in a file...")
-    f = open("initial_list_problem.txt", "w+")
-    for task in exception_list:
-        f.write(task.__repr__() + "\n")
-    f.close()
-
-    list_round = []
-    flag_wait = 0
-
-    while len(exception_list) != 0:
-        try:
-            print(exception_list[0])
-            exception_list[0].start()
-            exception_list.pop(0)
-
-            if flag_wait > 2:
-                print("writing tasks list in a file...")
-                f = open("final_list_problem.txt", "w+")
-                for task in exception_list:
-                    f.write(task.__repr__() + "\n")
-                f.close()
-                exit()
-
-        except:
-            print("using exception...")
-            first = exception_list[0]
-            exception_list.pop(0)
-            exception_list.append(first)
-
-            list_round.append(len(exception_list))
-
-            if len(list_round) > 10:
-                list_round.pop(0)
-
-            if (len(set(list_round)) == 1):
-                print("waiting...")
-                print(list_round)
-                time.sleep(60 * 60)
-                flag_wait += 1
-
-    print("script is done!")
-
-# def degree_conv(var):
-#     data = var.split("°",1)
-#     if data[0][0] == '-':
-#         d = data[0][1:]
-#         negative = True
-#     else:
-#         d = data[0]
-#         negative = False
-#     data = data[1].split("'",1)
-#     minutes = data[0]
-#     data = data[1].split('"',2)
-#     sec =  data[0]
-
-#     #DMS to decimal degrees converter
-#     if negative:
-#         dd = (int(d) + (float(minutes)/60) + (float(sec)/3600)) * -1
-#     else:
-#         dd = int(d) + (float(minutes)/60) + (float(sec)/3600)
-#     return round(dd, 6)
+    logging.info("End!")
 
 
-# data = pd.read_csv('classificacaoBarragens.csv', sep= ';', usecols=[0, 2, 3])
-# # data = pd.read_csv('../datasets/parques_nacionais.csv', sep= ';', usecols=[0, 1, 2])
-
-# data = data.values
-
-
-# # Monitor the task.
-# while task.status()['state'] in ['READY', 'RUNNING']:
-#     print(task.status())
-#     time.sleep(10)
-# else:
-#     print(task.status())
-
-# # # with open('kml-brasil-master/lib/2010/municipios/MG/geojson/NOVA_LIMA.geojson', encoding='utf-8') as f:
-# # #     gj = geojson.load(f)
-# # # geometry = ee.Geometry.Polygon([gj['features'][0]['geometry']['coordinates']])
-
-
-# for barragem in range(data.shape[0]):
-# 	# Logitude, Latitude 
-
-# 	x, y = degree_conv(data[barragem][2]), degree_conv(data[barragem][1])
-# 	x, y = degree_conv("51°11\'28.95\""), degree_conv("35°45\'14.21\"")
-# 	# y = round(y + 0.021395*2, 6)
-
-# 	llx = x - 0.02785  #0.1114 
-# 	lly = y - 0.021395 #0.08558 
-# 	urx = x + 0.02785  #0.1114 
-# 	ury = y + 0.021395 #0.08558 
-
-
-# 	geometry = [[llx,lly], [llx,ury], [urx,ury], [urx,lly]]
-
-# 	task_config = {
-# 	    'scale':  10 ,
-# 	    'region': geometry
-# 	    }
-
-
-# task = ee.batch.Export.image(image, "imagem_gabriel", task_config) #"{0:0=3d}".format(barragem+1)
-# task.start()
-
-
-# print("DONE!")
-
-
-# for i in range(data.shape[0]):
-#     data[i][0] = data[i][0].replace("ô", "o")
-#     data[i][0] = data[i][0].replace("õ", "o")
-#     data[i][0] = data[i][0].replace("í", "i")
-#     data[i][0] = data[i][0].replace("ó", "o")
-#     data[i][0] = data[i][0].replace("ç", "c")
-#     data[i][0] = data[i][0].replace("ú", "u")
-#     data[i][0] = data[i][0].replace("-", " ")
-#     data[i][0] = data[i][0].replace("á", "a")
-#     data[i][0] = data[i][0].replace("ã", "a")
-#     data[i][0] = data[i][0].replace("Ó", "O")
-#     data[i][0] = data[i][0].replace("ü", "u")
-
-
-# x, y = data[barragem][2], data[barragem][1]
-
-# name = data[barragem][0]
-# name = name.lower().replace(" ", "_").replace("-", "_").replace("/", "_")
-
-
-# check_intersection = False
-# for check in range(data.shape[0]):
-# 	if check != barragem:
-# 		x_, y_ = degree_conv(data[check][2]), degree_conv(data[check][1])
-# 		if (llx < x_ < urx) and (lly < y_ < ury):
-# 			check_intersection = True
-
-# if not check_intersection:
-# print("N" + "{0:0=3d}".format(barragem+1))
+if __name__ == '__main__':
+    main()
