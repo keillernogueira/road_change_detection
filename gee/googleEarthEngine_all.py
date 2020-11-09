@@ -4,15 +4,20 @@ import geojson
 import os
 import argparse
 import logging
+
+import sys
+print(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils import str2bool
 
 
 '''
 python googleEarthEngine_all.py --satellite landsat7_toa --shape_path ..\data\\area1.geojson --start_date 2019-01-01 --end_date 2020-01-01
 
-gdal_rasterize -l area2_lines -burn 1.0 -ts 2792.0 1072.0 -a_nodata 0.0 -te -54.866797645978856 -9.470560761817564 -54.61611971034132 -9.374296922444158
-
+# landsat8_toa 2013
 python googleEarthEngine_all.py --satellite landsat8_sr --shape_path ..\data\\area2.geojson --file_name area2_landsat8_sr_2013_sync --start_date 2013-04-01 --end_date 2014-01-01
+# landsat7_toa 2002
+python googleEarthEngine_all.py --satellite landsat7_toa --shape_path ..\data\\area2.geojson --file_name area2_landsat7_toa_2002_pansharpen --start_date 2002-01-01 --end_date 2003-01-01 --panshapern True
 '''
 
 

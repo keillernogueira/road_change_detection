@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import time
 import configparser
-from gee.utils import init_log
+from gee.utils2 import init_log
 from gee.config import *
 
 import os

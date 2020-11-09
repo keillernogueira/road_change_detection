@@ -92,6 +92,8 @@ def save_shapely(data, output_file):
     ds = layer = feat = geom = None
 
 
+# gdal_rasterize -l area2_lines -burn 1.0 -ts 2792.0 1072.0 -a_nodata 0.0
+# -te -54.866797645978856 -9.470560761817564 -54.61611971034132 -9.374296922444158
 def rasterize_vector(vector_path, area_tif, output_file):
     # Open area image
     area_img = gdal.Open(area_tif, gdal.GA_ReadOnly)
