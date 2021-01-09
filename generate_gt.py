@@ -177,7 +177,7 @@ def rasterize_vector2(vector_path, area_json, area_tif, output_file):
     target_ds = None
 
 
-def dilate_gt(input_path, output_path):
+def dilate_gt(input_path, output_path, save_readable=False):
     img = imageio.imread(input_path)
     print('before dilation', img.shape, np.bincount(img.astype(int).flatten()))
 
@@ -185,6 +185,8 @@ def dilate_gt(input_path, output_path):
     print('after dilation', img.shape, np.bincount(dil_out.astype(int).flatten()))
 
     imageio.imwrite(output_path, dil_out)
+    if save_readable:
+        imageio.imwrite(os.path.splitext(output_path)[0] + '_readable.png', dil_out * 255)
 
 
 def main():
@@ -222,7 +224,7 @@ def main():
     save_shapely(intersect, args.gt_file.replace('.png', '.geojson'))
 
     rasterize_vector(args.gt_file.replace('.png', '.geojson'), args.area_tif, args.gt_file.replace('.png', '.tif'))
-    dilate_gt(args.gt_file.replace('.png', '.tif'), args.gt_file)
+    dilate_gt(args.gt_file.replace('.png', '.tif'), args.gt_file, save_readable=True)
 
 
 if __name__ == '__main__':
