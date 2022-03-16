@@ -20,6 +20,7 @@ import skimage.transform
 import urllib.request
 import shutil
 import warnings
+import tifffile
 
 # URL from which to download the latest COCO trained weights
 COCO_MODEL_URL = "https://github.com/matterport/Mask_RCNN/releases/download/v2.0/mask_rcnn_coco.h5"
@@ -365,7 +366,8 @@ class Dataset(object):
         """Load the specified image and return a [H,W,3] Numpy array.
         """
         # Load image
-        image = skimage.io.imread(self.image_info[image_id]['path'])
+        # image = skimage.io.imread(self.image_info[image_id]['path'])
+        image = tifffile.imread(self.image_info[image_id]['path'])
         # If grayscale. Convert to RGB for consistency.
         if image.ndim != 3:
             image = skimage.color.gray2rgb(image)
